@@ -1,6 +1,8 @@
 # 1. DB 라이브러리 가져오기
 import psycopg2
 import os
+import yfinance as yf
+import time
 from dotenv import load_dotenv
 #.env파일 로드
 load_dotenv()
@@ -36,6 +38,15 @@ def SaveStock(conn, name, ticker, price):
         conn.commit()
     # 2-7. 연결 끊기 (Finally)
         cursor.close() 
+
+def LoadData(ticker):
+    ticker = yf.Ticker(ticker)
+
+    Current_Price = ticker.fast_info['last_price']
+    name = ticker.info.get('longName')
+    print("현재 가격은 " , Current_Price)
+    return name, Current_Price
+
 def main():
     conn = psycopg2.connect(
         database = os.getenv("DB_NAME"),
@@ -44,6 +55,14 @@ def main():
         host = os.getenv("DB_HOST"),
         port = os.getenv("DB_PORT")
     )
-    SaveStock(conn, "TESLA", "000001", 77777) 
+    # 2.1.1 찾기를 원하는 주식 받기
+    ticker = input("찾고자 하는 주식의 고유번호를 입력하시오 : ")
+    #LoadData(ticker)
+    while conn:
+        name, Current_Price = LoadData(ticker) 
+        SaveStock(conn, name, ticker, Current_Price ) 
+        print("데이터를 정상적으로 저장하였습니다.")
+        time.sleep(60)
+        
     conn.close()
 main()
