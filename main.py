@@ -3,6 +3,7 @@ import psycopg2
 import os
 import yfinance as yf
 import time
+import keyboard as kb
 from dotenv import load_dotenv
 #.env파일 로드
 load_dotenv()
@@ -47,22 +48,32 @@ def LoadData(ticker):
     print("현재 가격은 " , Current_Price)
     return name, Current_Price
 
+##def KeyEvent(e):
+    if e.KeyEvent == keyboard.Key_DOWN:
+        ss
 def main():
-    conn = psycopg2.connect(
-        database = os.getenv("DB_NAME"),
-        user = os.getenv("DB_USER"),
-        password = os.getenv("DB_PASSWORD"),
-        host = os.getenv("DB_HOST"),
-        port = os.getenv("DB_PORT")
-    )
-    # 2.1.1 찾기를 원하는 주식 받기
-    ticker = input("찾고자 하는 주식의 고유번호를 입력하시오 : ")
-    #LoadData(ticker)
-    while conn:
-        name, Current_Price = LoadData(ticker) 
-        SaveStock(conn, name, ticker, Current_Price ) 
-        print("데이터를 정상적으로 저장하였습니다.")
-        time.sleep(60)
+    try:    
+        conn = psycopg2.connect(
+            database = os.getenv("DB_NAME"),
+            user = os.getenv("DB_USER"),
+            password = os.getenv("DB_PASSWORD"),
+            host = os.getenv("DB_HOST"),
+            port = os.getenv("DB_PORT")
+        )
+        # 2.1.1 찾기를 원하는 주식 받기
+        ticker = input("찾고자 하는 주식의 고유번호를 입력하시오 : ")
+        #LoadData(ticker)
+        while conn:
+            name, Current_Price = LoadData(ticker) 
+            SaveStock(conn, name, ticker, Current_Price ) 
+            print("데이터를 정상적으로 저장하였습니다.")
+            time.sleep(60)
+
         
-    conn.close()
+    except KeyboardInterrupt: 
+        print("연결이 정상적으로 종료되었습니다.")
+    
+    finally:
+        if conn:
+            conn.close()    
 main()
