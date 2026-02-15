@@ -37,8 +37,18 @@ def SaveStock(conn, name, ticker, price):
         cursor.execute(insert_price, price_data)
     # 2-6. 저장 확정(Commit)
         conn.commit()
+        AnalazeData(conn, company_id) ##데이터를 가치있는 정보로 전환
     # 2-7. 연결 끊기 (Finally)
         cursor.close() 
+
+def AnalazeData(conn, company_id):
+    Analze_cursor = conn.cursor()
+    Analze_cursor.execute("SELECT MAX(Price), MIN(Price) From Prices WHERE Company_id = %s", (company_id,))
+    result = Analze_cursor.fetchone()
+    Max_Price = result[0]
+    Min_Price = result[1]
+
+    
 
 def LoadData(ticker):
     ticker = yf.Ticker(ticker)
@@ -60,19 +70,38 @@ def main():
             host = os.getenv("DB_HOST"),
             port = os.getenv("DB_PORT")
         )
-        # 2.1.1 찾기를 원하는 주식 받기
-        ticker = input("찾고자 하는 주식의 고유번호를 입력하시오 : ")
+        
         #LoadData(ticker)
         while conn:
-            name, Current_Price = LoadData(ticker) 
-            SaveStock(conn, name, ticker, Current_Price ) 
-            print("데이터를 정상적으로 저장하였습니다.")
+            cursor = conn.cursor()
+            cursor.execute("SELECT ticker FROM Companies")
+            company_list = cursor.fetchall() 
+            cursor.close()
+ 
+            for company in company_list:
+                target_ticker = company[0] # 튜플에서 알맹이 꺼내기 ('TSLA')
+                
+                try:
+                    # 데이터 수집 및 저장
+                    print(f" 수집 중: {target_ticker}")
+                    name, Current_Price = LoadData(target_ticker) 
+                    SaveStock(conn, name, target_ticker, Current_Price)
+                    
+                except Exception as e:
+                    # 특정 종목 수집하다 에러나도(예: 상장폐지) 멈추지 않고 다음 종목으로!
+                    print(f" {target_ticker} 에러 발생: {e}")
+            
+            # 3. 한 바퀴 다 돌았으면 휴식
+            print(" 모든 종목 수집 완료. 1분 대기...")
             time.sleep(60)
-
-        
-    except KeyboardInterrupt: 
-        print("연결이 정상적으로 종료되었습니다.")
-    
+            
+    except KeyboardInterrupt:
+        print("\n사용자가 종료를 요청했습니다.")
+    except Exception as e:
+        # 여기가 핵심입니다! 어떤 에러가 났는지 범인을 지목합니다.
+        print(f"예상치 못한 에러 발생: {e}")
+        import traceback
+        traceback.print_exc() # 에러가 난 위치를 정확히 추적해줍니다.
     finally:
         if conn:
             conn.close()    

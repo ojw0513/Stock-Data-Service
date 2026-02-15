@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>주식 데이터 서비스</title>
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body { font-family: 'Arial', sans-serif; text-align: center; padding: 50px; }
+        .search-box { margin-bottom: 30px; }
+        .input-field { padding: 10px; width: 200px; font-size: 16px; }
+        .btn { padding: 10px 20px; font-size: 16px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .price-card { background-color: #f4f4f4; padding: 20px; border-radius: 10px; display: inline-block; width: 400px; }
+        .price-big { font-size: 40px; font-weight: bold; color: #333; }
+        .price-sub { font-size: 20px; color: #666; }
+        .chart-box { margin-top: 30px; height: 300px; background-color: #eee; border: 1px dashed #999; line-height: 300px; }
+    </style>
+</head>
+<body>
+
+    <h1>실시간 주식 대시보드</h1>
+
+    <div class="search-box">
+        <form method="POST">
+            <input type="text" name="search_ticker" class="input-field" placeholder="종목코드 (예: TSLA)" value="{{ ticker }}">
+            <button type="submit" class="btn">검색</button>
+        </form>
+    </div>
+
+    <div class="price-card">
+        <h2>{{ ticker }} 현재가</h2>
+        <div class="price-big">$ {{ usd }}</div>
+        <div class="price-sub">₩ {{ "{:,.0f}".format(krw) }} (예상)</div>
+        <p>기준 시간: {{ date }}</p>
+    </div>
+
+    <div class="chart-box">
+        (주식 차트 들어갈 예정)
+    </div>
+
+</body>
+</html>

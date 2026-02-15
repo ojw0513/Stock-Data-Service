@@ -265,4 +265,315 @@
 
     엔지니어링 결과(Impact): 불필요한 네트워크 I/O를 50% 절감하여 시스템 효율성을 높였으며, 코드의 가독성과 유지보수성을 확보했다.
 
+    - **26.02.12 ~ 26.02.15 - app.py로 서버를 연결후 html을 통한 사이트 구성**
+    - 최종 코드
+    main.py
+    ```python
+    # 1. DB 라이브러리 가져오기
+    import psycopg2
+    import os
+    import yfinance as yf
+    import time
+    import keyboard as kb
+    from dotenv import load_dotenv
+    #.env파일 로드
+    load_dotenv()
+    # 1-1. DB 연결하기 (비밀번호 필요)
+
+    # 2. 저장하는 함수 만들기 (인자는 종목코드, 가격)
+    def SaveStock(conn, name, ticker, price):
+            if conn:
+            print("연결이 정상적으로 실행되었습니다.")
+            else:
+            print("연결이 실행되지 않았습니다. 다시 연결해주세요")
+        # 2-1. 커서(심부름꾼) 만들기
+            cursor = conn.cursor() 
+        # 2-2. 회사 있는지 확인해보기 (SELECT)
+            cursor.execute("SELECT * From Companies Where ticker = %s",(ticker,))
+            result = cursor.fetchone()
+        # 2-3. 있으면? -> ID 가져오기
+            if result != None:
+                company_id = result[0]
+        # 2-4. 없으면? -> 회사 등록하고(INSERT) -> ID 받아오기
+            else :
+                insert_company = "INSERT INTO Companies (name, ticker) VALUES(%s, %s) RETURNING id"
+                company_data = (name, ticker)
+                cursor.execute(insert_company, company_data)
+                company_id = cursor.fetchone()[0]
+
+            print(f"등록 완료! ID: {company_id}, 종목: {ticker}, price: {price}")
+        # 2-5. 가격 저장하기 (INSERT)
+            insert_price = ("INSERT INTO Prices (company_id, price) VALUES(%s, %s)")
+            price_data = (company_id, price)
+            cursor.execute(insert_price, price_data)
+        # 2-6. 저장 확정(Commit)
+            conn.commit()
+            AnalazeData(conn, company_id) ##데이터를 가치있는 정보로 전환
+        # 2-7. 연결 끊기 (Finally)
+            cursor.close() 
+
+    def AnalazeData(conn, company_id):
+        Analze_cursor = conn.cursor()
+        Analze_cursor.execute("SELECT MAX(Price), MIN(Price) From Prices WHERE Company_id = %s", (company_id,))
+        result = Analze_cursor.fetchone()
+        Max_Price = result[0]
+        Min_Price = result[1]
+
+        
+
+    def LoadData(ticker):
+        ticker = yf.Ticker(ticker)
+
+        Current_Price = ticker.fast_info['last_price']
+        name = ticker.info.get('longName')
+        print("현재 가격은 " , Current_Price)
+        return name, Current_Price
+
+    ##def KeyEvent(e):
+        if e.KeyEvent == keyboard.Key_DOWN:
+            ss
+    def main():
+        try:    
+            conn = psycopg2.connect(
+                database = os.getenv("DB_NAME"),
+                user = os.getenv("DB_USER"),
+                password = os.getenv("DB_PASSWORD"),
+                host = os.getenv("DB_HOST"),
+                port = os.getenv("DB_PORT")
+            )
+            
+            #LoadData(ticker)
+            while conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ticker FROM Companies")
+                company_list = cursor.fetchall() 
+                cursor.close()
+    
+                for company in company_list:
+                    target_ticker = company[0] # 튜플에서 알맹이 꺼내기 ('TSLA')
+                    
+                    try:
+                        # 데이터 수집 및 저장
+                        print(f" 수집 중: {target_ticker}")
+                        name, Current_Price = LoadData(target_ticker) 
+                        SaveStock(conn, name, target_ticker, Current_Price)
+                        
+                    except Exception as e:
+                        # 특정 종목 수집하다 에러나도(예: 상장폐지) 멈추지 않고 다음 종목으로!
+                        print(f" {target_ticker} 에러 발생: {e}")
+                
+                # 3. 한 바퀴 다 돌았으면 휴식
+                print(" 모든 종목 수집 완료. 1분 대기...")
+                time.sleep(60)
+                
+        except KeyboardInterrupt:
+            print("\n사용자가 종료를 요청했습니다.")
+        except Exception as e:
+            # 여기가 핵심입니다! 어떤 에러가 났는지 범인을 지목합니다.
+            print(f"예상치 못한 에러 발생: {e}")
+            import traceback
+            traceback.print_exc() # 에러가 난 위치를 정확히 추적해줍니다.
+        finally:
+            if conn:
+                conn.close()    
+    main()
+    ```
+    
+    app.py
+    ```python
+    from flask import Flask, render_template, request
+    import psycopg2
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    app = Flask(__name__)
+
+        # DB에서 최신 가격 하나만 가져오는 함수
+    def get_latest_price(ticker):
+            conn = psycopg2.connect(
+                database=os.getenv("DB_NAME"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASSWORD"),
+                host=os.getenv("DB_HOST"),
+                port=os.getenv("DB_PORT")
+            )
+            cursor = conn.cursor()
+            
+            # 가장 최근 시간의 가격 1개 조회
+            # Prices 테이블과 Companies 테이블을 조인해서 가져옴
+            sql = """
+            SELECT p.price, p.created_at 
+            FROM Prices p
+            JOIN Companies c ON p.company_id = c.id
+            WHERE c.ticker = %s
+            ORDER BY p.created_at DESC
+            LIMIT 1
+            """
+            cursor.execute(sql, (ticker,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            return result if result else (0, "데이터 없음")
+
+        # 1. 메인 페이지 접속 
+    @app.route('/', methods=['GET', 'POST'])
+    def index():
+            ticker = "TSLA" # 기본값
+            price = 0
+            date = ""
+            exchange_rate = 1400 # 환율 (일단 고정값, 나중에 라이브러리로 가져오자)
+
+            conn = psycopg2.connect(
+                database=os.getenv("DB_NAME"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASSWORD"),
+                host=os.getenv("DB_HOST"),
+                port=os.getenv("DB_PORT")
+            )
+            cursor = conn.cursor()
+            # 검색창에 입력을 했다면?
+            if request.method == 'POST':
+                ticker = request.form.get('search_ticker')
+
+                cursor.execute("SELECT * From Companies Where ticker = %s",(ticker,))
+                result = cursor.fetchone()
+            
+            #  없으면? -> 회사 등록하고(INSERT) -> ID 받아오기
+                if not result :
+                    cursor.execute("INSERT INTO Companies (name, ticker) VALUES(%s, %s) RETURNING id", (ticker, ticker))
+                    conn.commit()
+                
+
+            # DB에서 가격 가져오기
+            data = get_latest_price(ticker)
+            price_usd = float(data[0]) # 달러
+            price_krw = price_usd * exchange_rate # 원화 계산
+            date = data[1]
+            conn.close()
+            # index.html에 데이터 전달하기
+            return render_template('index.html', 
+                                ticker=ticker, 
+                                usd=price_usd, 
+                                krw=price_krw,
+                                date=date)
+            
+    if __name__ == '__main__':
+        app.run(debug=True)
+    ```
+
+    index.html
+    ```html
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>주식 데이터 서비스</title>
+        <meta http-equiv="refresh" content="10">
+        <style>
+            body { font-family: 'Arial', sans-serif; text-align: center; padding: 50px; }
+            .search-box { margin-bottom: 30px; }
+            .input-field { padding: 10px; width: 200px; font-size: 16px; }
+            .btn { padding: 10px 20px; font-size: 16px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+            .price-card { background-color: #f4f4f4; padding: 20px; border-radius: 10px; display: inline-block; width: 400px; }
+            .price-big { font-size: 40px; font-weight: bold; color: #333; }
+            .price-sub { font-size: 20px; color: #666; }
+            .chart-box { margin-top: 30px; height: 300px; background-color: #eee; border: 1px dashed #999; line-height: 300px; }
+        </style>
+    </head>
+    <body>
+
+        <h1>실시간 주식 대시보드</h1>
+
+        <div class="search-box">
+            <form method="POST">
+                <input type="text" name="search_ticker" class="input-field" placeholder="종목코드 (예: TSLA)" value="{{ ticker }}">
+                <button type="submit" class="btn">검색</button>
+            </form>
+        </div>
+
+        <div class="price-card">
+            <h2>{{ ticker }} 현재가</h2>
+            <div class="price-big">$ {{ usd }}</div>
+            <div class="price-sub">₩ {{ "{:,.0f}".format(krw) }} (예상)</div>
+            <p>기준 시간: {{ date }}</p>
+        </div>
+
+        <div class="chart-box">
+            (주식 차트 들어갈 예정)
+        </div>
+
+    </body>
+    </html>
+    ```
+    - 작성 코드 설명 (Architecture & Logic)
+    금일은 단순 데이터 수집을 넘어, 사용자가 웹을 통해 데이터를 조회하고 시스템이 자동으로 반응하는 "상호작용형 아키텍처"를 구축하는 데 집중하였다.
+
+    1. Flask 웹 프레임워크 도입과 역할 분리
+        단순히 터미널에 로그를 남기는 것을 넘어, 실제 서비스 가능한 형태를 갖추기 위해 경량 웹 프레임워크인 Flask를 도입하였다.
+        이때 가장 중요하게 고려한 것은 "역할의 분리(Separation of Concerns)"입니다. 하나의 파일에 모든 기능을 넣는 대신, 데이터 수집을 담당하는 main.py와 사용자 요청을 처리하는 app.py로 시스템을 이원화하였다.
+        이를 통해 수집 로직이 변경되더라도 웹 서버에는 영향이 없고, 반대로 웹 디자인을 고쳐도 수집기에는 영향이 없는 유연한 구조를 설계하였다.
+
+    2. 데이터베이스(DB)를 활용한 프로세스 간 통신
+        서로 다른 두 프로그램(main.py, app.py)이 어떻게 소통할지 고민한 끝에, 데이터베이스를 공용 게시판(Shared Storage)으로 활용하는 방식을 채택하였다.
+        등록 로직: 사용자가 웹(app.py)에서 종목을 검색하면, 웹 서버는 즉시 Companies 테이블에 해당 종목을 등록(INSERT)한다.
+        수집 로직: 백그라운드에서 실행 중인 수집기(main.py)는 주기적으로 DB를 순찰하며, 새로 등록된 종목이 있는지 확인하고 자동으로 수집 대상에 포함시킨다.
+        이 구조 덕분에 사용자가 늘어나도 수집기는 흔들림 없이 자신의 역할만 수행하면 되는 확장성 있는 설계를 갖추게 되었다.
+
+    3. 안정적인 자원 관리 (Graceful Shutdown)
+        24시간 돌아가는 서버 프로그램의 특성상, 에러 발생이나 강제 종료 시 데이터베이스 연결이 끊어지지 않고 좀비처럼 남는(Leak) 문제가 발생할 수 있음을 인지하였다.
+        이를 방지하기 위해 try-except-finally 패턴을 적용하였습니다. 예상치 못한 에러가 발생하거나 관리자가 서버를 종료(Ctrl+C)하더라도, finally 블록에서 반드시 conn.close()를 실행하여 DB 연결을 안전하게 해제하도록 구현하였다.
+
+    4. 클라이언트 사이드 렌더링 (Meta Refresh)
+        웹 브라우저는 기본적으로 정적인(Static) 페이지를 보여주기 때문에, 실시간으로 변하는 주가를 반영하지 못하는 문제가 있었다.
+        복잡한 JavaScript 비동기 통신을 도입하기 전, HTML 표준 태그인 <meta http-equiv="refresh" content="10">을 활용하여 10초마다 페이지가 스스로 최신 데이터를 받아오도록 구현하였다. 이를 통해 적은 비용으로 실시간 대시보드의 느낌을 사용자에게 제공할 수 있게 되었다.    
+
+    -오류 확인 및 문제 해결
+
+    1. SQL 문법 및 집계 함수 사용 오류
+    상황 (Situation): DB에 저장된 가격 중 최고가와 최저가를 분석하기 위해 SELECT * Max(Price)... 쿼리를 실행했으나 SyntaxError가 발생하며 실행이 중단됨.
+
+    원인 분석 (Root Cause):
+
+        - SQL 표준 문법 위배: SQL에서 * (모든 컬럼)와 MAX() (집계 함수)는 GROUP BY 절 없이는 함께 사용할 수 없음을 간과함.
+        
+        - 쿼리 구조적 모순: "모든 데이터를 보여줘"라는 요청과 "값 하나만 계산해줘"라는 요청이 충돌함.
+
+    해결 방안 (Action):
+
+        - 쿼리 최적화: 불필요한 *를 제거하고, SELECT MAX(price), MIN(price) FROM... 형태로 집계 함수만 명확히 호출하도록 수정함.
+
+        - 단일 호출로 변경: 최고가와 최저가를 각각 조회하던 로직을 한 번의 쿼리로 통합하여 네트워크 I/O 비용을 절감함.
+
+    엔지니어링 결과 (Impact): SQL의 집계 함수 작동 원리를 명확히 이해하고, 효율적인 쿼리 작성 능력을 확보함.
+
+    2. 라이브러리 메서드 인자 오류 (TypeError)
+    상황 (Situation): 데이터 분석 함수(AnalazeData) 실행 중 fetchone(0) 코드에서 TypeError: takes no arguments 에러가 발생하며 프로그램이 강제 종료됨.
+
+    원인 분석 (Root Cause):
+
+        - 메서드 시그니처 오해: psycopg2 라이브러리의 fetchone() 메서드는 인자를 받지 않고 튜플(Tuple) 전체를 반환한다는 점을 인지하지 못하고, 리스트 인덱싱처럼 사용하려 함.
+
+    해결 방안 (Action):
+
+        - 언패킹 로직 수정: 메서드 호출과 인덱싱을 분리하여 result = fetchone()으로 튜플을 먼저 받고, 이후 result[0]으로 데이터에 접근하도록 로직을 변경함.
+
+        - 예외 처리 강화: 반환값이 None일 경우를 대비한 분기문을 추가하여 코드의 안정성을 높임.
+
+    엔지니어링 결과 (Impact): 외부 라이브러리 사용 시 반환 타입(Return Type) 확인의 중요성을 체득하고, 런타임 에러를 방지하는 방어적 코딩 습관을 기름.
+
+    3. 웹 서버 객체 속성 오버라이딩 오류
+    상황 (Situation): 웹에서 주식 검색 시 AttributeError: ... object attribute 'execute' is read-only 또는 'str' object is not callable 에러 발생.
+
+    원인 분석 (Root Cause):
+
+        - 문법적 오타: cursor.execute = ("INSERT...")와 같이 메서드 호출 괄호 앞에 등호(=)를 잘못 입력함.
+
+        - 객체 속성 훼손: 메서드 실행이 아닌, 메서드 자체를 문자열로 덮어씌우려는 시도로 인해 객체의 기능이 상실됨.
+
+    해결 방안 (Action):
+
+        - 문법 교정: 등호를 제거하고 정상적인 함수 호출 형태(cursor.execute(...))로 수정하여 DB 명령이 올바르게 전달되도록 조치함.
+
+    엔지니어링 결과 (Impact): 파이썬의 객체 속성과 메서드 호출 방식의 차이를 재확인하고, 디버깅 메시지를 통해 코드의 논리적 오류를 빠르게 파악하는 능력을 향상함.
+        
    
